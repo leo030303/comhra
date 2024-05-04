@@ -1,0 +1,6 @@
+data/org.leoring.PhiChat.desktop.in.in
+data/org.leoring.PhiChat.gschema.xml.in
+data/org.leoring.PhiChat.metainfo.xml.in.in
+data/resources/ui/shortcuts.ui
+data/resources/ui/window.ui
+src/application.rs
