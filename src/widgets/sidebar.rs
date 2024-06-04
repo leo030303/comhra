@@ -191,26 +191,7 @@ impl SideBarListItem {
         file_path: PathBuf,
         conversation_file_option_sender: Sender<Option<PathBuf>>,
     ) -> Self {
-        let permanent_state;
-        let conversation_name: String;
-        if let Some(loaded_conversation) = SavedConversation::load(&file_path) {
-            conversation_name = loaded_conversation.name;
-            if loaded_conversation.archived {
-                permanent_state = Arc::new(Mutex::new(SideBarListItemPermanentState::Archived));
-            } else if loaded_conversation.starred {
-                permanent_state = Arc::new(Mutex::new(SideBarListItemPermanentState::Starred));
-            } else {
-                permanent_state = Arc::new(Mutex::new(SideBarListItemPermanentState::Normal));
-            }
-        } else {
-            conversation_name = file_path
-                .file_stem()
-                .unwrap()
-                .to_str()
-                .unwrap_or("Error reading filename")
-                .to_owned();
-            permanent_state = Arc::new(Mutex::new(SideBarListItemPermanentState::Normal));
-        }
+        let (permanent_state, conversation_name) = Self::initialise_state_and_name(&file_path);
         let main_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(0)
@@ -235,108 +216,17 @@ impl SideBarListItem {
             .icon_name("view-more-symbolic")
             .build();
 
-        let delete_button = gtk::Button::builder()
-            .icon_name("edit-delete-symbolic")
-            .has_tooltip(true)
-            .tooltip_text("Delete")
-            .build();
-        let rename_button = gtk::Button::builder()
-            .icon_name("document-edit-symbolic")
-            .has_tooltip(true)
-            .tooltip_text("Rename")
-            .build();
-        let menu_box = gtk::Box::builder()
-            .spacing(2)
-            .orientation(gtk::Orientation::Horizontal)
-            .build();
-        menu_box.append(&rename_button);
-        menu_box.append(&delete_button);
-
-        let menu_popover = gtk::Popover::builder().autohide(true).build();
+        let menu_popover = Self::create_menu_popover(
+            &main_box,
+            &permanent_state,
+            &file_path,
+            conversation_name,
+            &open_button,
+        );
         menu_popover.set_parent(&menu_button);
-        menu_popover.set_position(gtk::PositionType::Right);
-        menu_popover.set_child(Some(&menu_box));
-
-        let confirm_delete_button = gtk::Button::builder().label("Delete").hexpand(true).build();
-        let cancel_delete_button = gtk::Button::builder().label("Cancel").hexpand(true).build();
-        {
-            let main_box = main_box.clone();
-            let permanent_state = Arc::clone(&permanent_state);
-            let file_path = file_path.clone();
-            confirm_delete_button.connect_clicked(move |_| {
-                SideBarListItem::delete_conversation(
-                    &main_box,
-                    &file_path,
-                    Arc::clone(&permanent_state),
-                )
-            });
-        }
-        {
-            let menu_popover = menu_popover.clone();
-            let menu_box = menu_box.clone();
-            cancel_delete_button.connect_clicked(move |_| {
-                menu_popover.set_child(Some(&menu_box));
-                menu_popover.popdown();
-            });
-        }
-
-        let delete_box = gtk::Box::builder()
-            .spacing(2)
-            .orientation(gtk::Orientation::Horizontal)
-            .build();
-        delete_box.append(&confirm_delete_button);
-        delete_box.append(&cancel_delete_button);
-
-        let rename_buffer = gtk::EntryBuffer::new(Some(&conversation_name));
-        let rename_entry = gtk::Entry::with_buffer(&rename_buffer);
-        let confirm_rename_button = gtk::Button::builder()
-            .icon_name("emblem-ok-symbolic")
-            .build();
-        let cancel_rename_button = gtk::Button::builder()
-            .icon_name("process-stop-symbolic")
-            .build();
-
-        {
-            let menu_popover = menu_popover.clone();
-            let menu_box = menu_box.clone();
-            let open_button = open_button.clone();
-            let file_path = file_path.clone();
-            let rename_buffer = rename_buffer.clone();
-            confirm_rename_button.connect_clicked(move |_| {
-                let new_name = rename_buffer.text().to_string();
-                SideBarListItem::rename_conversation(&file_path, &new_name, &open_button);
-                menu_popover.set_child(Some(&menu_box));
-                menu_popover.popdown();
-            });
-        }
-        {
-            let menu_popover = menu_popover.clone();
-            let menu_box = menu_box.clone();
-            let open_button = open_button.clone();
-            let file_path = file_path.clone();
-            let rename_buffer = rename_buffer.clone();
-            rename_entry.connect_activate(move |_| {
-                let new_name = rename_buffer.text().to_string();
-                SideBarListItem::rename_conversation(&file_path, &new_name, &open_button);
-                menu_popover.set_child(Some(&menu_box));
-                menu_popover.popdown();
-            });
-        }
-        {
-            let menu_popover = menu_popover.clone();
-            cancel_rename_button.connect_clicked(move |_| {
-                menu_popover.set_child(Some(&menu_box));
-                menu_popover.popdown();
-            });
-        }
-
-        let rename_box = gtk::Box::builder()
-            .spacing(2)
-            .orientation(gtk::Orientation::Horizontal)
-            .build();
-        rename_box.append(&rename_entry);
-        rename_box.append(&confirm_rename_button);
-        rename_box.append(&cancel_rename_button);
+        menu_button.connect_clicked(move |_| {
+            menu_popover.popup();
+        });
 
         main_box.append(&open_button);
         main_box.append(&archive_button);
@@ -351,33 +241,12 @@ impl SideBarListItem {
         });
 
         {
-            let menu_popover = menu_popover.clone();
-            menu_button.connect_clicked(move |_| {
-                menu_popover.popup();
-            });
-        }
-
-        {
-            let menu_popover = menu_popover.clone();
-            rename_button.connect_clicked(move |_| {
-                menu_popover.set_child(Some(&rename_box));
-            });
-        }
-
-        {
-            let menu_popover = menu_popover.clone();
-            delete_button.connect_clicked(move |_| {
-                menu_popover.set_child(Some(&delete_box));
-            });
-        }
-
-        {
             let file_path = file_path.clone();
             let archive_button = archive_button.clone();
             let main_box = main_box.clone();
             let permanent_state = Arc::clone(&permanent_state);
             star_button.connect_clicked(move |star_button| {
-                SideBarListItem::toggle_favourite(
+                Self::toggle_favourite(
                     &file_path,
                     star_button,
                     &archive_button,
@@ -393,7 +262,7 @@ impl SideBarListItem {
             let permanent_state = Arc::clone(&permanent_state);
 
             archive_button.connect_clicked(move |archive_button| {
-                SideBarListItem::toggle_archive(
+                Self::toggle_archive(
                     &file_path,
                     &star_button,
                     archive_button,
@@ -424,7 +293,7 @@ impl SideBarListItem {
     }
     fn rename_conversation(file_path: &PathBuf, new_name: &str, open_button: &gtk::Button) {
         if let Some(mut loaded_conversation) = SavedConversation::load(file_path) {
-            loaded_conversation.name = new_name.to_owned();
+            new_name.clone_into(&mut loaded_conversation.name);
             loaded_conversation.save(file_path);
             open_button.set_label(new_name);
             println!("Renamed {}", new_name);
@@ -507,5 +376,185 @@ impl SideBarListItem {
             loaded_conversation.starred = starred_val_to_write;
             loaded_conversation.save(file_path);
         }
+    }
+
+    fn initialise_state_and_name(
+        file_path: &PathBuf,
+    ) -> (Arc<Mutex<SideBarListItemPermanentState>>, String) {
+        let permanent_state;
+        let conversation_name: String;
+        if let Some(loaded_conversation) = SavedConversation::load(file_path) {
+            conversation_name = loaded_conversation.name;
+            if loaded_conversation.archived {
+                permanent_state = Arc::new(Mutex::new(SideBarListItemPermanentState::Archived));
+            } else if loaded_conversation.starred {
+                permanent_state = Arc::new(Mutex::new(SideBarListItemPermanentState::Starred));
+            } else {
+                permanent_state = Arc::new(Mutex::new(SideBarListItemPermanentState::Normal));
+            }
+        } else {
+            conversation_name = file_path
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap_or("Error reading filename")
+                .to_owned();
+            permanent_state = Arc::new(Mutex::new(SideBarListItemPermanentState::Normal));
+        }
+        (permanent_state, conversation_name)
+    }
+
+    fn create_menu_popover(
+        main_box: &gtk::Box,
+        permanent_state: &Arc<Mutex<SideBarListItemPermanentState>>,
+        file_path: &PathBuf,
+        conversation_name: String,
+        open_button: &gtk::Button,
+    ) -> gtk::Popover {
+        let delete_button = gtk::Button::builder()
+            .icon_name("edit-delete-symbolic")
+            .has_tooltip(true)
+            .tooltip_text("Delete")
+            .build();
+        let rename_button = gtk::Button::builder()
+            .icon_name("document-edit-symbolic")
+            .has_tooltip(true)
+            .tooltip_text("Rename")
+            .build();
+        let menu_box = gtk::Box::builder()
+            .spacing(2)
+            .orientation(gtk::Orientation::Horizontal)
+            .build();
+        menu_box.append(&rename_button);
+        menu_box.append(&delete_button);
+
+        let menu_popover = gtk::Popover::builder().autohide(true).build();
+        menu_popover.set_position(gtk::PositionType::Right);
+        menu_popover.set_child(Some(&menu_box));
+
+        let delete_box = Self::create_delete_box(
+            main_box,
+            permanent_state,
+            file_path,
+            &menu_popover,
+            &menu_box,
+        );
+
+        let rename_box = Self::create_rename_box(
+            conversation_name,
+            &menu_popover,
+            menu_box,
+            open_button,
+            file_path,
+        );
+        let menu_popover_for_rename = menu_popover.clone();
+        rename_button.connect_clicked(move |_| {
+            menu_popover_for_rename.set_child(Some(&rename_box));
+        });
+
+        let menu_popover_for_delete = menu_popover.clone();
+        delete_button.connect_clicked(move |_| {
+            menu_popover_for_delete.set_child(Some(&delete_box));
+        });
+        menu_popover
+    }
+
+    fn create_rename_box(
+        conversation_name: String,
+        menu_popover: &gtk::Popover,
+        menu_box: gtk::Box,
+        open_button: &gtk::Button,
+        file_path: &PathBuf,
+    ) -> gtk::Box {
+        let rename_buffer = gtk::EntryBuffer::new(Some(&conversation_name));
+        let rename_entry = gtk::Entry::with_buffer(&rename_buffer);
+        let confirm_rename_button = gtk::Button::builder()
+            .icon_name("emblem-ok-symbolic")
+            .build();
+        let cancel_rename_button = gtk::Button::builder()
+            .icon_name("process-stop-symbolic")
+            .build();
+
+        {
+            let menu_popover = menu_popover.clone();
+            let menu_box = menu_box.clone();
+            let open_button = open_button.clone();
+            let file_path = file_path.clone();
+            let rename_buffer = rename_buffer.clone();
+            confirm_rename_button.connect_clicked(move |_| {
+                let new_name = rename_buffer.text().to_string();
+                SideBarListItem::rename_conversation(&file_path, &new_name, &open_button);
+                menu_popover.set_child(Some(&menu_box));
+                menu_popover.popdown();
+            });
+        }
+        {
+            let menu_popover = menu_popover.clone();
+            let menu_box = menu_box.clone();
+            let open_button = open_button.clone();
+            let file_path = file_path.clone();
+            let rename_buffer = rename_buffer.clone();
+            rename_entry.connect_activate(move |_| {
+                let new_name = rename_buffer.text().to_string();
+                SideBarListItem::rename_conversation(&file_path, &new_name, &open_button);
+                menu_popover.set_child(Some(&menu_box));
+                menu_popover.popdown();
+            });
+        }
+        {
+            let menu_popover = menu_popover.clone();
+            cancel_rename_button.connect_clicked(move |_| {
+                menu_popover.set_child(Some(&menu_box));
+                menu_popover.popdown();
+            });
+        }
+
+        let rename_box = gtk::Box::builder()
+            .spacing(2)
+            .orientation(gtk::Orientation::Horizontal)
+            .build();
+        rename_box.append(&rename_entry);
+        rename_box.append(&confirm_rename_button);
+        rename_box.append(&cancel_rename_button);
+        rename_box
+    }
+
+    fn create_delete_box(
+        main_box: &gtk::Box,
+        permanent_state: &Arc<Mutex<SideBarListItemPermanentState>>,
+        file_path: &PathBuf,
+        menu_popover: &gtk::Popover,
+        menu_box: &gtk::Box,
+    ) -> gtk::Box {
+        let confirm_delete_button = gtk::Button::builder().label("Delete").hexpand(true).build();
+        let cancel_delete_button = gtk::Button::builder().label("Cancel").hexpand(true).build();
+        {
+            let main_box = main_box.clone();
+            let permanent_state = Arc::clone(permanent_state);
+            let file_path = file_path.clone();
+            confirm_delete_button.connect_clicked(move |_| {
+                SideBarListItem::delete_conversation(
+                    &main_box,
+                    &file_path,
+                    Arc::clone(&permanent_state),
+                )
+            });
+        }
+        {
+            let menu_popover = menu_popover.clone();
+            let menu_box = menu_box.clone();
+            cancel_delete_button.connect_clicked(move |_| {
+                menu_popover.set_child(Some(&menu_box));
+                menu_popover.popdown();
+            });
+        }
+
+        let delete_box = gtk::Box::builder()
+            .spacing(2)
+            .orientation(gtk::Orientation::Horizontal)
+            .build();
+        delete_box.append(&confirm_delete_button);
+        delete_box.append(&cancel_delete_button);
+        delete_box
     }
 }

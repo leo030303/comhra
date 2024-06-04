@@ -16,7 +16,7 @@ use std::sync::{mpsc, Arc, Mutex};
 
 fn process_user_prompt(
     prompt_entry_buffer: &gtk::EntryBuffer,
-    prompt_button_send_icon: &gtk::Image,
+    prompt_button: &gtk::Button,
     list_sender: &Sender<Message>,
     model_sender: &Sender<Message>,
     is_processing: &Arc<Mutex<ModelMessageState>>,
@@ -30,7 +30,7 @@ fn process_user_prompt(
     if let ModelMessageState::UserTurn = model_message_state {
         let text = prompt_entry_buffer.text().to_string();
         if !text.is_empty() {
-            prompt_button_send_icon.set_from_icon_name(Some("emblem-synchronizing-symbolic"));
+            prompt_button.set_icon_name("emblem-synchronizing-symbolic");
             prompt_entry_buffer.set_text("");
             let mut chat_message = Message {
                 role: crate::models::Role::User,
@@ -58,15 +58,14 @@ fn process_user_prompt(
 }
 
 fn create_model_caller_thread(
-    main_context: glib::MainContext,
     chat_model: Arc<Mutex<Box<dyn CoreLLM>>>,
     model_receiver: Receiver<Message>,
     list_sender: Sender<Message>,
     is_processing: &Arc<Mutex<ModelMessageState>>,
     rag_dropdown: RagDropdown,
-) -> glib::MainContext {
+) {
     let is_processing = Arc::clone(is_processing);
-    main_context.spawn_local(async move {
+    glib::MainContext::default().spawn_local(async move {
         loop {
             match model_receiver.try_recv() {
                 Ok(mut chat_message) => {
@@ -98,17 +97,15 @@ fn create_model_caller_thread(
             }
         }
     });
-    main_context
 }
 
 fn create_list_manager_thread(
-    main_context: glib::MainContext,
     list_receiver: Receiver<Message>,
     conversation_list_box: gtk::ListBox,
-    prompt_button_send_icon: gtk::Image,
+    prompt_button: gtk::Button,
     is_processing: Arc<Mutex<ModelMessageState>>,
-) -> glib::MainContext {
-    main_context.spawn_local(async move {
+) {
+    glib::MainContext::default().spawn_local(async move {
         let mut chat_message_list_item = ChatMessageListItem::new(None);
         let mut last_model_message_state = ModelMessageState::UserTurn;
         loop {
@@ -140,7 +137,7 @@ fn create_list_manager_thread(
                         }
                         ModelMessageState::FinishedAssistant => {
                             chat_message_list_item.update_message(chat_message);
-                            prompt_button_send_icon.set_from_icon_name(Some("emblem-ok-symbolic"));
+                            prompt_button.set_icon_name("emblem-ok-symbolic");
                         }
                     }
                 }
@@ -161,11 +158,9 @@ fn create_list_manager_thread(
             }
         }
     });
-    main_context
 }
 
 fn create_conversation_file_manager_thread(
-    main_context: glib::MainContext,
     conversation_file_option_receiver: Receiver<Option<PathBuf>>,
     chat_model: &Arc<Mutex<Box<dyn CoreLLM>>>,
     prompt_entry_widget: PromptEntryWidget,
@@ -175,11 +170,10 @@ fn create_conversation_file_manager_thread(
     main_context_box: gtk::Box,
     sidebar_box: gtk::Box,
     sidebar_toggle_button: gtk::ToggleButton,
-) -> glib::MainContext {
+) {
     let chat_model = Arc::clone(chat_model);
     let conversation_file_path_arc = Arc::clone(conversation_file_path_arc);
-    let main_context_clone = main_context.clone();
-    main_context.spawn_local(async move {
+    glib::MainContext::default().spawn_local(async move {
         loop {
             match conversation_file_option_receiver.try_recv() {
                 Ok(conversation_file_option) => {
@@ -187,7 +181,6 @@ fn create_conversation_file_manager_thread(
                     sidebar_box.hide();
                     sidebar_toggle_button.set_active(false);
                     create_chat_context(
-                        &main_context_clone,
                         &chat_model,
                         &conversation_scroll_window,
                         &prompt_entry_widget,
@@ -209,11 +202,9 @@ fn create_conversation_file_manager_thread(
             }
         }
     });
-    main_context
 }
 
 fn create_chat_context(
-    new_main_context: &glib::MainContext,
     chat_model: &Arc<Mutex<Box<dyn CoreLLM>>>,
     conversation_scroll_window: &gtk::ScrolledWindow,
     prompt_entry_widget: &PromptEntryWidget,
@@ -222,7 +213,6 @@ fn create_chat_context(
     rag_dropdown: RagDropdown,
 ) {
     // Initialise all the async
-    let new_main_context = new_main_context.clone();
     let chat_model_for_thread = Arc::clone(chat_model);
     let (model_sender, model_receiver): (Sender<Message>, Receiver<Message>) = mpsc::channel();
     let (list_sender, list_receiver): (Sender<Message>, Receiver<Message>) = mpsc::channel();
@@ -241,7 +231,7 @@ fn create_chat_context(
         // Clone vars for closure
         let prompt_entry_buffer = prompt_entry_widget.prompt_entry_buffer.clone();
         let prompt_selected_file = Arc::clone(&prompt_entry_widget.selected_file);
-        let prompt_button_send_icon = prompt_entry_widget.prompt_button_send_icon.clone();
+        let prompt_button = prompt_entry_widget.submit_button.clone();
         let list_sender = list_sender.clone();
         let model_sender = model_sender.clone();
         let is_processing = Arc::clone(&is_processing);
@@ -260,7 +250,7 @@ fn create_chat_context(
         let new_signal_id = prompt_entry_widget.prompt_entry.connect_activate(move |_| {
             process_user_prompt(
                 &prompt_entry_buffer,
-                &prompt_button_send_icon,
+                &prompt_button,
                 &list_sender,
                 &model_sender,
                 &is_processing,
@@ -280,7 +270,7 @@ fn create_chat_context(
         // Clone vars for closure
         let prompt_entry_buffer = prompt_entry_widget.prompt_entry_buffer.clone();
         let prompt_selected_file = Arc::clone(&prompt_entry_widget.selected_file);
-        let prompt_button_send_icon = prompt_entry_widget.prompt_button_send_icon.clone();
+        let prompt_button = prompt_entry_widget.submit_button.clone();
         let list_sender = list_sender.clone();
         let model_sender = model_sender.clone();
         let is_processing = Arc::clone(&is_processing);
@@ -303,7 +293,7 @@ fn create_chat_context(
         let new_signal_id = prompt_entry_widget.submit_button.connect_clicked(move |_| {
             process_user_prompt(
                 &prompt_entry_buffer,
-                &prompt_button_send_icon,
+                &prompt_button,
                 &list_sender,
                 &model_sender,
                 &is_processing,
@@ -320,8 +310,7 @@ fn create_chat_context(
 
     // Spawn a thread which listens for prompts to run through the model
     let list_sender_for_model_caller = list_sender.clone();
-    let main_context = create_model_caller_thread(
-        new_main_context,
+    create_model_caller_thread(
         chat_model_for_thread,
         model_receiver,
         list_sender_for_model_caller,
@@ -331,10 +320,9 @@ fn create_chat_context(
 
     // Spawn a thread which listens for items to add to the conversation list
     create_list_manager_thread(
-        main_context,
         list_receiver,
         conversation_list_box,
-        prompt_entry_widget.prompt_button_send_icon.clone(),
+        prompt_entry_widget.submit_button.clone(),
         Arc::clone(&is_processing),
     );
     if let Some(conversation_filepath) = new_conversation_filepath_option {
@@ -375,7 +363,6 @@ fn create_chat_context(
 
 pub fn build_ui(app: &adw::Application) {
     // Set up async channels and context
-    let main_context = glib::MainContext::default();
     let chat_model: Arc<Mutex<Box<dyn CoreLLM>>> =
         Arc::new(Mutex::new(Box::new(OllamaModel::new())));
     let (conversation_file_option_sender, conversation_file_option_receiver): (
@@ -408,11 +395,9 @@ pub fn build_ui(app: &adw::Application) {
         main_content_box.clone(),
         conversation_file_option_sender.clone(),
         Arc::clone(&chat_model),
-        main_context.clone(),
     );
 
-    let main_context = create_conversation_file_manager_thread(
-        main_context,
+    create_conversation_file_manager_thread(
         conversation_file_option_receiver,
         &chat_model,
         prompt_entry_widget,
@@ -457,11 +442,10 @@ pub fn build_ui(app: &adw::Application) {
         .child(&paned_main)
         .build();
 
-    let new_main_context = main_context.clone();
     window.connect_close_request(move |_| {
         let chat_model_for_export = Arc::clone(&chat_model);
         let conversation_file_path_for_export = Arc::clone(&conversation_file_path_arc);
-        new_main_context.spawn_local(async move {
+        glib::MainContext::default().spawn_local(async move {
             chat_model_for_export.lock().unwrap().export_conversation(
                 conversation_file_path_for_export
                     .lock()

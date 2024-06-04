@@ -9,6 +9,7 @@ lto = true
 
 [dependencies]
 adw = { version = "0.6.0", package = "libadwaita", features = ["v1_2"] }
+arboard = "3.4.0"
 async-channel = "2.2.1"
 async-openai = "0.21.0"
 async-trait = "0.1.80"

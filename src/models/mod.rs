@@ -12,12 +12,10 @@ use crate::{utils::get_root_folder, RagSource};
 
 use self::{
     api_model::{ApiModel, ApiTypeForSaving},
-    candle_model::CandleModel,
     ollama_model::OllamaModel,
 };
 
 pub mod api_model;
-pub mod candle_model;
 pub mod ollama_model;
 
 #[async_trait]
@@ -161,10 +159,6 @@ impl SavedModel {
             println!("Error: {:?}", err);
             vec![]
         }));
-        saved_models_list.append(&mut CandleModel::list_models().unwrap_or_else(|err| {
-            println!("Error: {:?}", err);
-            vec![]
-        }));
         saved_models_list
     }
 }
@@ -172,7 +166,6 @@ impl SavedModel {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ModelType {
     Ollama,
-    Candle,
     Api(String, ApiTypeForSaving),
 }
 
@@ -180,7 +173,6 @@ impl ModelType {
     pub fn name(&self) -> &str {
         match self {
             ModelType::Ollama => "Ollama",
-            ModelType::Candle => "Candle",
             ModelType::Api(..) => "Api",
         }
     }

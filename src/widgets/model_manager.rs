@@ -41,7 +41,7 @@ struct ModelListItem {
 }
 
 impl ModelListItem {
-    pub fn new(model_info: ModelInfo, main_context: glib::MainContext) -> Self {
+    pub fn new(model_info: ModelInfo) -> Self {
         let detail_box = gtk::Box::builder()
             .spacing(5)
             .hexpand(true)
@@ -94,7 +94,6 @@ impl ModelListItem {
                         button,
                         download_name.clone(),
                         model_download_progress_bar.clone(),
-                        main_context.clone(),
                     )
                 });
             }
@@ -112,7 +111,6 @@ impl ModelListItem {
                         button,
                         download_name.clone(),
                         model_download_progress_bar.clone(),
-                        main_context.clone(),
                     )
                 });
             }
@@ -131,9 +129,8 @@ impl ModelListItem {
         button: &gtk::Button,
         download_name: String,
         model_download_progress_bar: gtk::ProgressBar,
-        main_context: glib::MainContext,
     ) {
-        main_context.spawn_local(OllamaModel::delete_model(download_name.clone()));
+        glib::MainContext::default().spawn_local(OllamaModel::delete_model(download_name.clone()));
         button.set_icon_name("document-save-symbolic");
         button.set_css_classes(&["not-downloaded-button"]);
         button.connect_clicked(move |button| {
@@ -141,7 +138,6 @@ impl ModelListItem {
                 button,
                 download_name.clone(),
                 model_download_progress_bar.clone(),
-                main_context.clone(),
             )
         });
     }
@@ -150,11 +146,10 @@ impl ModelListItem {
         button: &gtk::Button,
         download_name: String,
         model_download_progress_bar: gtk::ProgressBar,
-        main_context: glib::MainContext,
     ) {
         let model_download_progress_bar_for_thread = model_download_progress_bar.clone();
         let download_name_for_thread = download_name.clone();
-        main_context.spawn_local(async move {
+        glib::MainContext::default().spawn_local(async move {
             OllamaModel::pull_model(
                 download_name_for_thread,
                 &model_download_progress_bar_for_thread,
@@ -168,7 +163,6 @@ impl ModelListItem {
                 button,
                 download_name.clone(),
                 model_download_progress_bar.clone(),
-                main_context.clone(),
             )
         });
     }
@@ -180,7 +174,7 @@ pub struct ModelManagerWidget {
 }
 
 impl ModelManagerWidget {
-    pub fn new(main_context: glib::MainContext) -> Self {
+    pub fn new() -> Self {
         let ollama_model_list_path =
             get_root_folder().join(PathBuf::from("./ollama_model_list.json"));
         let mut ollama_model_list = if ollama_model_list_path.exists() {
@@ -214,8 +208,7 @@ impl ModelManagerWidget {
                 .collect::<Vec<String>>();
             ollama_model_list.iter_mut().for_each(|model_info| {
                 model_info.is_downloaded = saved_models_names.contains(&model_info.download_name);
-                let model_list_item_box =
-                    ModelListItem::new(model_info.clone(), main_context.clone()).main_box;
+                let model_list_item_box = ModelListItem::new(model_info.clone()).main_box;
                 list_widget.append(&model_list_item_box);
             });
             scroll_window.set_child(Some(&list_widget));
@@ -237,7 +230,7 @@ impl ModelManagerWidget {
             install_ollama_button.connect_clicked(move |_| {
                 let installation_progress_spinner = installation_progress_spinner.clone();
                 let error_label = error_label.clone();
-                main_context.spawn_local(async move {
+                glib::MainContext::default().spawn_local(async move {
                     execute_command(&installation_progress_spinner, &error_label).await;
                 });
                 println!("TEST3");
@@ -250,8 +243,13 @@ impl ModelManagerWidget {
     }
 }
 
+impl Default for ModelManagerWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 async fn execute_command(installation_progress_spinner: &gtk::Spinner, error_label: &gtk::Label) {
-    let command = "curl -fsSL https://ollama.com/install.sh | sh";
     installation_progress_spinner.start();
     let ollama_install_script = Command::new("curl")
         .arg("-fsSL")

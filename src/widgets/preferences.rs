@@ -1,5 +1,4 @@
 use adw::prelude::*;
-use gtk::glib;
 
 use super::model_manager::ModelManagerWidget;
 
@@ -8,8 +7,8 @@ pub struct PreferencesWidget {
 }
 
 impl PreferencesWidget {
-    pub fn new(main_context: glib::MainContext) -> Self {
-        let model_manager_widget = ModelManagerWidget::new(main_context);
+    pub fn new() -> Self {
+        let model_manager_widget = ModelManagerWidget::new();
         let dialog = gtk::Dialog::builder()
             .title("Preferences")
             .default_height(300)
