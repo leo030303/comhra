@@ -1,0 +1,10 @@
+procs:
+  run_app:
+    shell: "cargo run"
+    autostart: false
+  build_flatpak:
+    shell: "flatpak-builder --install repo build-aux/com.github.leo030303.Comhra.Devel.json --force-clean --user -y"
+    autostart: false
+  run_flatpak:
+    shell: "flatpak run com.github.leo030303.Comhra.Devel"
+    autostart: false
